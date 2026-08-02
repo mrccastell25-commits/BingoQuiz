@@ -736,6 +736,8 @@ let iAmHost=false;
 let knownLines={}, linesBaselined=false, finalizeAttempted=false;
 let spectatorOpen=false;
 let qTimeout=null, qInterval=null, qAnswered=false, qOpenedDrawId=null, expireCurrentQuestion=null;
+// what's actually shown on the card / "numbers called" list — lags behind S until the drawn ball animation reveals it
+let displayCalledHistory=[], displayCurrentNumber=null, displayDrawId=null;
 
 function genCode(){ const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
 function setLobbyError(msg){ document.getElementById('lobbyError').textContent = msg; }
@@ -865,6 +867,7 @@ function resetToLobby(){
   clearInterval(autoTimer); autoTimer=null;
   clearTimeout(qTimeout); clearInterval(qInterval); qTimeout=null; qInterval=null;
   knownLines={}; linesBaselined=false; finalizeAttempted=false; spectatorOpen=false;
+  displayCalledHistory=[]; displayCurrentNumber=null; displayDrawId=null;
   document.getElementById('spectatorOverlay').classList.remove('open');
   document.getElementById('waitScreen').classList.add('hidden');
   document.getElementById('app').classList.remove('show');
@@ -884,6 +887,7 @@ function renderWait(){
   document.getElementById('waitScreen').classList.remove('hidden');
   document.getElementById('app').classList.remove('show');
   knownLines={}; linesBaselined=false; finalizeAttempted=false; winnerShown=false;
+  lastSeenDrawId=-1; displayCalledHistory=[]; displayCurrentNumber=null; displayDrawId=null;
   document.getElementById('winOverlay').classList.remove('open');
   const players = S.players||{};
   const keys = Object.keys(players).map(Number).sort((a,b)=>a-b);
@@ -911,9 +915,9 @@ function isCellAvailable(p, idx){
   if(p.marked && p.marked[idx]) return false;
   if(S.phase!=='playing') return false;
   const val = p.card[idx];
-  if(val !== S.currentNumber) return false;
+  if(val !== displayCurrentNumber) return false;
   // only one attempt allowed per drawn ball — once attempted for this drawId, the square closes
-  if(p.attemptedDraws && S.currentDrawId!=null && p.attemptedDraws[S.currentDrawId]) return false;
+  if(p.attemptedDraws && displayDrawId!=null && p.attemptedDraws[displayDrawId]) return false;
   return true;
 }
 
@@ -991,15 +995,9 @@ function renderGame(){
   const stripEl = document.getElementById('playersStrip');
   if(iAmHost){ stripEl.style.display = 'flex'; renderPlayersStrip(); }
   else { stripEl.style.display = 'none'; }
-  renderCard();
-  renderCalled();
-  diffLinesAndNotify();
-  if(spectatorOpen) renderSpectator();
 
-  const drawBtn = document.getElementById('drawBtn');
-  drawBtn.disabled = !!S.winner || !!S.paused || S.phase!=='playing';
-
-  // new draw animation trigger
+  // detect a new ball before deciding what to reveal on the card / "numbers called" list
+  let willAnimate = false;
   if(typeof S.currentDrawId === 'number' && S.currentDrawId > lastSeenDrawId){
     const isFirst = lastSeenDrawId === -1;
     const newDrawId = S.currentDrawId;
@@ -1009,9 +1007,33 @@ function renderGame(){
       expireCurrentQuestion('🎱 New ball drawn — too late!');
     }
     if(!isFirst || S.currentNumber){
-      playDrawAnimation(S.currentNumber);
+      willAnimate = true;
+      // ball animation plays first; only once it's fully shown do we reveal it on the card and in the called list
+      playDrawAnimation(S.currentNumber, ()=>{
+        displayCalledHistory = S.calledHistory||[];
+        displayCurrentNumber = S.currentNumber;
+        displayDrawId = S.currentDrawId;
+        renderCard();
+        renderCalled();
+        const btn = document.getElementById('drawBtn');
+        btn.disabled = !!S.winner || !!S.paused || S.phase!=='playing';
+      });
     }
   }
+  if(!willAnimate){
+    // no new ball this render pass — keep card/called list in sync with the room state right away
+    displayCalledHistory = S.calledHistory||[];
+    displayCurrentNumber = S.currentNumber;
+    displayDrawId = S.currentDrawId;
+  }
+
+  renderCard();
+  renderCalled();
+  diffLinesAndNotify();
+  if(spectatorOpen) renderSpectator();
+
+  const drawBtn = document.getElementById('drawBtn');
+  drawBtn.disabled = !!S.winner || !!S.paused || S.phase!=='playing';
 }
 
 function renderPlayersStrip(){
@@ -1052,9 +1074,10 @@ function renderCard(){
 }
 
 function renderCalled(){
-  const hist = uniqueCalledOrder(S.calledHistory||[]);
+  const hist = uniqueCalledOrder(displayCalledHistory||[]);
   const list = document.getElementById('calledList');
-  const lastNum = (S.calledHistory||[]).length ? (S.calledHistory||[])[(S.calledHistory||[]).length-1] : null;
+  const dch = displayCalledHistory||[];
+  const lastNum = dch.length ? dch[dch.length-1] : null;
   list.innerHTML = hist.map(n=>{
     const L = letterFor(n);
     const status = calledNumberStatus(n);
@@ -1104,7 +1127,7 @@ function renderSpectator(){
 }
 
 /* ─── DRAW ANIMATION ─── */
-function playDrawAnimation(num){
+function playDrawAnimation(num, onRevealed){
   sndDraw();
   const globe = document.getElementById('globe');
   const ball = document.getElementById('drawnBall');
@@ -1120,6 +1143,8 @@ function playDrawAnimation(num){
       ball.classList.add('show');
       sndPop();
     }
+    // only now — after the ball is visible — reveal it on the card and in "numbers called"
+    if(typeof onRevealed === 'function') onRevealed();
   }, 900);
 }
 
@@ -1201,7 +1226,7 @@ function cellClick(idx){
   if(!isCellAvailable(p, idx)) return;
   pendingCellIdx = idx;
   pendingNumber = p.card[idx];
-  pendingDrawId = S.currentDrawId;
+  pendingDrawId = displayDrawId;
   openQuestion();
 }
 
