@@ -684,6 +684,7 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 
+self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 
 initializeAppCheck(fbApp, {
   provider: new ReCaptchaV3Provider("6Lfp93UtAAAAAPPQxsgo74zH8g7_qlc21r4ZtbQW"),
