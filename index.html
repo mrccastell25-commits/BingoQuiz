@@ -328,6 +328,10 @@ button { font-family: inherit; }
 .dbPlate .dbNum { font-family:'Fredoka One',cursive; font-size: clamp(1.2rem,5vw,2.2rem); line-height:1; color: var(--ballColor, #333); }
 #noDrawYet { position:absolute; color:#4a6a8a; font-size:.75rem; text-align:center; padding: 0 20px; }
 
+#drawCooldownBar { flex: 0 0 auto; height: 7px; border-radius: 6px; background: rgba(255,255,255,.08); overflow: hidden; margin: 2px 0 4px; display:none; }
+#drawCooldownFill { height: 100%; width: 0%; border-radius: 6px; background: #e74c3c; }
+#drawCooldownFill.running { transition: width linear, background-color linear; }
+
 #calledWrap { flex: 0 0 auto; background: var(--panel); border: 1.5px solid var(--border); border-radius: 12px; padding: 6px 8px; display:flex; flex-direction:column; }
 #calledLabel { font-size: .58rem; color:#5a7a9a; letter-spacing:1.5px; text-transform:uppercase; font-weight:700; margin-bottom:3px; }
 #calledList { display:flex; flex-wrap: nowrap; gap:6px; overflow-x:auto; overflow-y:hidden; padding: 4px 3px; scrollbar-width: none; -ms-overflow-style: none; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
@@ -589,6 +593,7 @@ button { font-family: inherit; }
         <div id="drawnBallWrap"><div id="drawnBall"><div class="dbPlate"><div class="dbLetter" id="dbLetter"></div><div class="dbNum" id="dbNum"></div></div></div></div>
         <div id="noDrawYet">Waiting for the first ball…</div>
       </div>
+      <div id="drawCooldownBar"><div id="drawCooldownFill"></div></div>
       <div id="calledWrap">
         <div id="calledLabel">Numbers called</div>
         <div id="calledList"></div>
@@ -745,6 +750,8 @@ const POOL = [
 /* ─── STATE ─── */
 let roomCode=null, mySlot=null, myName='Player', roomRef=null, unsub=null, S=null;
 let lastSeenDrawId=-1, pendingCellIdx=null, pendingNumber=null, pendingDrawId=null, qModalOpen=false, autoTimer=null;
+let drawCooldownActive=false, drawCooldownTimer=null;
+const DRAW_COOLDOWN_SECONDS = 4;
 let iAmHost=false;
 let knownLines={}, linesBaselined=false, finalizeAttempted=false;
 let spectatorOpen=false;
@@ -879,6 +886,9 @@ function resetToLobby(){
   roomCode=null; mySlot=null; roomRef=null; S=null; iAmHost=false; lastSeenDrawId=-1;
   clearInterval(autoTimer); autoTimer=null;
   clearTimeout(qTimeout); clearInterval(qInterval); qTimeout=null; qInterval=null;
+  clearTimeout(drawCooldownTimer); drawCooldownTimer=null; drawCooldownActive=false;
+  const cdBar = document.getElementById('drawCooldownBar');
+  if(cdBar) cdBar.style.display = 'none';
   knownLines={}; linesBaselined=false; finalizeAttempted=false; spectatorOpen=false;
   displayCalledHistory=[]; displayCurrentNumber=null; displayDrawId=null;
   document.getElementById('spectatorOverlay').classList.remove('open');
@@ -901,6 +911,9 @@ function renderWait(){
   document.getElementById('app').classList.remove('show');
   knownLines={}; linesBaselined=false; finalizeAttempted=false; winnerShown=false;
   lastSeenDrawId=-1; displayCalledHistory=[]; displayCurrentNumber=null; displayDrawId=null;
+  clearTimeout(drawCooldownTimer); drawCooldownTimer=null; drawCooldownActive=false;
+  const cdBar = document.getElementById('drawCooldownBar');
+  if(cdBar) cdBar.style.display = 'none';
   document.getElementById('winOverlay').classList.remove('open');
   const players = S.players||{};
   const keys = Object.keys(players).map(Number).sort((a,b)=>a-b);
@@ -992,6 +1005,40 @@ function syncHostInputs(){
   pauseBtn.disabled = S.phase!=='playing';
 }
 
+function updateDrawBtnState(){
+  const drawBtn = document.getElementById('drawBtn');
+  if(!drawBtn || !S) return;
+  drawBtn.disabled = !!S.winner || !!S.paused || S.phase!=='playing' || drawCooldownActive;
+}
+
+function startDrawCooldown(seconds){
+  seconds = seconds || DRAW_COOLDOWN_SECONDS;
+  const wrap = document.getElementById('drawCooldownBar');
+  const fill = document.getElementById('drawCooldownFill');
+  if(!wrap || !fill) return;
+  drawCooldownActive = true;
+  updateDrawBtnState();
+  clearTimeout(drawCooldownTimer);
+  wrap.style.display = 'block';
+  fill.classList.remove('running');
+  fill.style.transition = 'none';
+  fill.style.width = '0%';
+  fill.style.background = '#e74c3c';
+  void fill.offsetWidth; // force reflow so the transition below actually animates
+  fill.classList.add('running');
+  fill.style.transitionDuration = seconds + 's';
+  fill.style.width = '100%';
+  fill.style.background = '#27ae60';
+  drawCooldownTimer = setTimeout(()=>{
+    drawCooldownActive = false;
+    wrap.style.display = 'none';
+    fill.classList.remove('running');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    updateDrawBtnState();
+  }, seconds*1000);
+}
+
 function renderGame(){
   document.getElementById('waitScreen').classList.add('hidden');
   document.getElementById('app').classList.add('show');
@@ -1028,8 +1075,8 @@ function renderGame(){
         displayDrawId = S.currentDrawId;
         renderCard();
         renderCalled();
-        const btn = document.getElementById('drawBtn');
-        btn.disabled = !!S.winner || !!S.paused || S.phase!=='playing';
+        startDrawCooldown();
+        updateDrawBtnState();
       });
     }
   }
@@ -1045,8 +1092,7 @@ function renderGame(){
   diffLinesAndNotify();
   if(spectatorOpen) renderSpectator();
 
-  const drawBtn = document.getElementById('drawBtn');
-  drawBtn.disabled = !!S.winner || !!S.paused || S.phase!=='playing';
+  updateDrawBtnState();
 }
 
 function renderPlayersStrip(){
