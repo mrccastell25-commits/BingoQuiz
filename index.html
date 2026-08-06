@@ -330,7 +330,8 @@ button { font-family: inherit; }
 
 #calledWrap { flex: 0 0 auto; background: var(--panel); border: 1.5px solid var(--border); border-radius: 12px; padding: 6px 8px; display:flex; flex-direction:column; }
 #calledLabel { font-size: .58rem; color:#5a7a9a; letter-spacing:1.5px; text-transform:uppercase; font-weight:700; margin-bottom:3px; }
-#calledList { display:flex; flex-wrap: nowrap; gap:6px; overflow-x:auto; overflow-y:hidden; padding: 4px 3px; scrollbar-width: thin; }
+#calledList { display:flex; flex-wrap: nowrap; gap:6px; overflow-x:auto; overflow-y:hidden; padding: 4px 3px; scrollbar-width: none; -ms-overflow-style: none; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
+#calledList::-webkit-scrollbar { display: none; }
 .chNum {
   font-family:'Fredoka One',cursive; font-size:.5rem; color:#2b2013;
   background:#fffdf5; border: 1.5px solid #d8c98f; border-radius:50%;
@@ -1096,7 +1097,7 @@ function renderCalled(){
     const isLast = n===lastNum;
     return `<span class="chNum ${status} ${isLast?'last':''}">${L}${n}</span>`;
   }).join('');
-  list.scrollTop = list.scrollHeight;
+  list.scrollLeft = list.scrollWidth;
   const noDraw = document.getElementById('noDrawYet');
   noDraw.style.display = hist.length ? 'none' : 'block';
 }
